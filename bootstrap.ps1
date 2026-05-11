@@ -78,13 +78,22 @@ $profileDir = Split-Path $PROFILE
 New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
 
 if (Test-Path $PROFILE) {
-    $backup = "$PROFILE.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-    Move-Item $PROFILE $backup
-    Write-Host "  Existing profile backed up to $backup" -ForegroundColor DarkYellow
+    $existing = Get-Item $PROFILE
+    # If it's already a trampoline pointing to our dotfiles, skip
+    if ($existing.LinkType -ne 'SymbolicLink' -and (Get-Content $PROFILE -Raw) -match [regex]::Escape("$dotfiles\powershell\Microsoft.PowerShell_profile.ps1")) {
+        Write-Host "  Profile trampoline already in place" -ForegroundColor Green
+    } else {
+        $backup = "$PROFILE.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Move-Item $PROFILE $backup
+        Write-Host "  Existing profile backed up to $backup" -ForegroundColor DarkYellow
+    }
 }
 
-New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$dotfiles\powershell\Microsoft.PowerShell_profile.ps1" | Out-Null
-Write-Host "  Profile symlinked" -ForegroundColor Green
+if (-not (Test-Path $PROFILE)) {
+    # Use a trampoline (regular file) instead of a symlink so OneDrive sync doesn't break it
+    Set-Content -Path $PROFILE -Value ". `"$dotfiles\powershell\Microsoft.PowerShell_profile.ps1`"" -Encoding UTF8
+    Write-Host "  Profile trampoline created" -ForegroundColor Green
+}
 
 Write-Host "`n=== Done! Restart your terminal ===" -ForegroundColor Magenta
 Write-Host "  Don't forget: set font to 'CaskaydiaCove Nerd Font Mono' in Windows Terminal settings`n" -ForegroundColor DarkYellow
