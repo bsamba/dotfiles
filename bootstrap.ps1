@@ -20,7 +20,7 @@ function Install-WingetPackage {
 Write-Host "`n=== Dotfiles Bootstrap ===" -ForegroundColor Magenta
 
 # --- Install tools ---
-Write-Host "`n[1/4] Installing tools..." -ForegroundColor Yellow
+Write-Host "`n[1/5] Installing tools..." -ForegroundColor Yellow
 
 Install-WingetPackage "JanDeDobbeleer.OhMyPosh"   "oh-my-posh"
 Install-WingetPackage "GitHub.cli"                 "gh"
@@ -66,14 +66,14 @@ if (-not $alreadyInstalled) {
 }
 
 # --- Copy oh-my-posh theme ---
-Write-Host "`n[3/4] Installing oh-my-posh theme..." -ForegroundColor Yellow
+Write-Host "`n[3/5] Installing oh-my-posh theme..." -ForegroundColor Yellow
 $themesDir = "$env:LOCALAPPDATA\Programs\oh-my-posh\themes"
 New-Item -ItemType Directory -Force -Path $themesDir | Out-Null
 Copy-Item "$dotfiles\oh-my-posh\themes\atomic.omp.json" "$themesDir\atomic.omp.json" -Force
 Write-Host "  Theme installed" -ForegroundColor Green
 
 # --- Symlink PowerShell profile ---
-Write-Host "`n[4/4] Linking PowerShell profile..." -ForegroundColor Yellow
+Write-Host "`n[4/5] Linking PowerShell profile..." -ForegroundColor Yellow
 $profileDir = Split-Path $PROFILE
 New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
 
@@ -93,6 +93,29 @@ if (-not (Test-Path $PROFILE)) {
     # Use a trampoline (regular file) instead of a symlink so OneDrive sync doesn't break it
     Set-Content -Path $PROFILE -Value ". `"$dotfiles\powershell\Microsoft.PowerShell_profile.ps1`"" -Encoding UTF8
     Write-Host "  Profile trampoline created" -ForegroundColor Green
+}
+
+# --- Link AGENTS.md for coding agents ---
+Write-Host "`n[5/5] Linking AGENTS.md for coding agents..." -ForegroundColor Yellow
+$agentsTarget = "$dotfiles\AGENTS.md"
+$agentsPaths = @(
+    "$env:USERPROFILE\AGENTS.md",
+    "$env:USERPROFILE\.codex\AGENTS.md",
+    "$env:USERPROFILE\.claude\CLAUDE.md"
+)
+foreach ($path in $agentsPaths) {
+    $dir = Split-Path $path
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    if (Test-Path $path) {
+        $existing = Get-Item $path
+        if ($existing.LinkType -eq 'HardLink' -and $existing.Target -contains $agentsTarget) {
+            Write-Host "  Already linked $path" -ForegroundColor Green
+            continue
+        }
+        Remove-Item $path -Force
+    }
+    New-Item -ItemType HardLink -Path $path -Target $agentsTarget | Out-Null
+    Write-Host "  Linked $path" -ForegroundColor Green
 }
 
 Write-Host "`n=== Done! Restart your terminal ===" -ForegroundColor Magenta
