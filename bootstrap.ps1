@@ -17,33 +17,47 @@ function Install-WingetPackage {
     }
 }
 
+function Ensure-EnvironmentVariable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [string]$Description = $Name
+    )
+    $existing = [System.Environment]::GetEnvironmentVariable($Name, "User")
+    if ([string]::IsNullOrWhiteSpace($existing)) {
+        $value = Read-Host "  Enter $Description (or press Enter to skip)" -MaskInput
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            [System.Environment]::SetEnvironmentVariable($Name, $value, "User")
+            [System.Environment]::SetEnvironmentVariable($Name, $value, "Process")
+            Write-Host "  Set $Description" -ForegroundColor Green
+        } else {
+            Write-Host "  Skipped $Description" -ForegroundColor DarkYellow
+        }
+    } else {
+        Write-Host "  $Description already set" -ForegroundColor Green
+    }
+}
+
 Write-Host "`n=== Dotfiles Bootstrap ===" -ForegroundColor Magenta
 
-# --- Install tools ---
-Write-Host "`n[1/5] Installing tools..." -ForegroundColor Yellow
+# --- Install PowerShell profile dependencies ---
+Write-Host "`n[1/6] Installing PowerShell profile dependencies..." -ForegroundColor Yellow
 
-Install-WingetPackage "JanDeDobbeleer.OhMyPosh"   "oh-my-posh"
-Install-WingetPackage "GitHub.cli"                 "gh"
-Install-WingetPackage "Microsoft.DotNet.SDK.9"     "dotnet"
-Install-WingetPackage "Docker.DockerDesktop"       "docker"
-
-# Refresh PATH after installs
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-
-# dotnet-suggest
-if (-not (Get-Command dotnet-suggest -ErrorAction SilentlyContinue)) {
-    Write-Host "  Installing dotnet-suggest..." -ForegroundColor Cyan
-    dotnet tool install -g dotnet-suggest
-}
+Install-WingetPackage "JanDeDobbeleer.OhMyPosh" "oh-my-posh"
 
 # PSReadLine
 if (-not (Get-Module PSReadLine -ListAvailable | Where-Object Version -ge "2.3.0")) {
     Write-Host "  Installing PSReadLine..." -ForegroundColor Cyan
     Install-Module PSReadLine -Scope CurrentUser -Force -SkipPublisherCheck
+} else {
+    Write-Host "  PSReadLine already installed" -ForegroundColor Green
 }
 
+# Refresh PATH after installs
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
 # --- Install Nerd Font ---
-Write-Host "`n[2/4] Installing CaskaydiaCove Nerd Font..." -ForegroundColor Yellow
+Write-Host "`n[2/6] Installing CaskaydiaCove Nerd Font..." -ForegroundColor Yellow
 $fontDir = "$env:LOCALAPPDATA\Microsoft\Windows\Fonts"
 $regPath = "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
 $alreadyInstalled = Test-Path "$fontDir\CaskaydiaCoveNerdFont-Regular.ttf"
@@ -66,14 +80,14 @@ if (-not $alreadyInstalled) {
 }
 
 # --- Copy oh-my-posh theme ---
-Write-Host "`n[3/5] Installing oh-my-posh theme..." -ForegroundColor Yellow
+Write-Host "`n[3/6] Installing oh-my-posh theme..." -ForegroundColor Yellow
 $themesDir = "$env:LOCALAPPDATA\Programs\oh-my-posh\themes"
 New-Item -ItemType Directory -Force -Path $themesDir | Out-Null
 Copy-Item "$dotfiles\oh-my-posh\themes\atomic.omp.json" "$themesDir\atomic.omp.json" -Force
 Write-Host "  Theme installed" -ForegroundColor Green
 
 # --- Symlink PowerShell profile ---
-Write-Host "`n[4/5] Linking PowerShell profile..." -ForegroundColor Yellow
+Write-Host "`n[4/6] Linking PowerShell profile..." -ForegroundColor Yellow
 $profileDir = Split-Path $PROFILE
 New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
 
@@ -96,7 +110,7 @@ if (-not (Test-Path $PROFILE)) {
 }
 
 # --- Link AGENTS.md for coding agents ---
-Write-Host "`n[5/5] Linking AGENTS.md for coding agents..." -ForegroundColor Yellow
+Write-Host "`n[5/6] Linking AGENTS.md for coding agents..." -ForegroundColor Yellow
 $agentsTarget = "$dotfiles\AGENTS.md"
 $agentsPaths = @(
     "$env:USERPROFILE\AGENTS.md",
@@ -117,6 +131,12 @@ foreach ($path in $agentsPaths) {
     New-Item -ItemType HardLink -Path $path -Target $agentsTarget | Out-Null
     Write-Host "  Linked $path" -ForegroundColor Green
 }
+
+# --- Environment variables ---
+Write-Host "`n[6/6] Checking environment variables..." -ForegroundColor Yellow
+Ensure-EnvironmentVariable -Name "AUTO_ADMIN_PASSWORD" -Description "local admin password"
+Ensure-EnvironmentVariable -Name "N3O_NUGET_TOKEN" -Description "N3O NuGet token"
+Ensure-EnvironmentVariable -Name "NUGET_AUTH_TOKEN" -Description "NuGet auth token"
 
 Write-Host "`n=== Done! Restart your terminal ===" -ForegroundColor Magenta
 Write-Host "  Don't forget: set font to 'CaskaydiaCove Nerd Font Mono' in Windows Terminal settings`n" -ForegroundColor DarkYellow
