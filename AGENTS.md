@@ -20,6 +20,8 @@ General-purpose instructions for coding agents operating on this machine. This f
   - Personal repos go directly under `~/source/repos/<repo-name>`.
   - Before cloning, check whether the repo already exists at the expected path and reuse it.
 - Use `~/source/scratch` for scratch/temporary/throwaway work (experiments, one-off scripts, files to inspect) — do not scatter these into the repos root or home directory.
+- `~` paths are **machine-absolute**: `~/source/scratch` = `C:/Users/Bas/source/scratch`. Never prepend the current repo/workspace root to a `~`, drive-letter, or `/c/` path — `<repo>/source/scratch/...` does not exist.
+- When a tool call fails, never retry the identical call (the local model fleet runs at temperature 0 — identical retries fail identically and loop). Change approach: list the parent, search by filename, or report what is missing.
 
 ## Local model fleet
 
