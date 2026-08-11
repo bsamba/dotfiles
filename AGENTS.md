@@ -28,7 +28,7 @@ General-purpose instructions for coding agents operating on this machine. This f
 - Repos with long-lived environment branches (`main`/`dev`/`stg`) use **git worktrees** so every branch stays checked out:
   - The main checkout stays at the repo root (`~/source/repos/<org-name>/<repo-name>`) on the default branch.
   - Each additional branch lives in a sibling directory named `<repo-name>.worktrees/<branch>` — e.g. `~/source/repos/n3otech/vcwpCareHub.worktrees/dev` and `~/source/repos/n3otech/vcwpCareHub.worktrees/stg`.
-- Create them with `git worktree add ../<repo-name>.worktrees/<branch> <branch>` from the main checkout. Never check out the same branch in two worktrees — git refuses, and a detached HEAD in a worktree is a sign the layout drifted.
+- Create them with `git worktree add ../<repo-name>.worktrees/<branch> <branch>` from the <repos default branch> checkout. Never check out the same branch in two worktrees — git refuses, and a detached HEAD in a worktree is a sign the layout drifted.
 - When restructuring existing checkouts into this layout, move directories with `git worktree move` (fall back to `mv` + `git worktree repair` if the move is blocked by a Windows file lock).
 
 ## Local model fleet
