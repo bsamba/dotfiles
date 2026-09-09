@@ -1,0 +1,309 @@
+
+# Compose file version key removed (deprecated in v2+ CLI)
+#
+# ============================================================================
+# twd0x5d GitHub Actions Runner Bundle
+# ============================================================================
+# STARTUP DESIGN (idempotent — safe for docker restart / unless-stopped):
+#   1. Copy saved credentials from the persistent config mount (cp -n = no-overwrite)
+#   2. If .runner already exists → skip config.sh (runner is already registered)
+#   3. If .runner does NOT exist → register with config.sh using RUNNER_TOKEN_xxx
+#   4. exec ./run.sh (exec ensures signals are forwarded for graceful shutdown)
+#
+# WHY THIS MATTERS:
+#   Registration tokens are single-use and expire after ~1 hour. Without the
+#   idempotent check, every container restart calls config.sh, which fails once
+#   the token expires → container exits → Docker restarts → infinite loop →
+#   runner goes offline until someone manually intervenes.
+#   With the idempotent check, restarts just exec ./run.sh immediately using
+#   the already-saved credentials — no token needed after first registration.
+#
+# RESOURCE LIMITS (matched to n3o0x65lnx validated config):
+#   runner: 15 GB RAM / 4 CPUs  — headroom for build + 2× /m:2 MSBuild workers
+#   DinD:   10 GB RAM / 3 CPUs  — SQL Server 2025 needs 9.5 GB under tmpfs budget
+#   Swap:   runner +1 GB / DinD +1 GB  — safety net, prevents hard OOM kills
+# ============================================================================
+
+networks:
+  runner-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  run001-docker-storage:
+  run001-docker-certs:
+  run001-buildkit-cache:
+  run002-docker-storage:
+  run002-docker-certs:
+  run002-buildkit-cache:
+
+# Shared runner command template (applied identically to each runner service).
+# Use YAML anchors to avoid copy-paste drift.
+x-runner-command: &runner-command >-
+  /bin/bash -c "set -e;
+  cd /home/runner &&
+  cp -n /home/runner/config/.runner .runner 2>/dev/null || true &&
+  cp -n /home/runner/config/.credentials .credentials 2>/dev/null || true &&
+  cp -n /home/runner/config/.credentials_rsaparams .credentials_rsaparams 2>/dev/null || true &&
+  if [ -f .runner ]; then
+    echo 'Runner already configured, skipping registration';
+  else
+    ./config.sh
+      --url https://github.com/n3otech
+      --token ${RUNNER_TOKEN}
+      --name ${RUNNER_NAME}
+      --labels ${RUNNER_LABELS}
+      --work _work
+      --unattended
+      --replace
+      --disableupdate;
+  fi &&
+  exec ./run.sh"
+
+services:
+  # ============================================================================
+  # Runner 1
+  # ============================================================================
+  runner-001:
+    image: ghcr.io/actions/actions-runner:2.335.1
+    container_name: runner-001
+    hostname: twd0x5dlnxrun001
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    command: >-
+      /bin/bash -c "cd /home/runner &&
+      cp -n /home/runner/config/.runner .runner 2>/dev/null || true &&
+      cp -n /home/runner/config/.credentials .credentials 2>/dev/null || true &&
+      cp -n /home/runner/config/.credentials_rsaparams .credentials_rsaparams 2>/dev/null || true &&
+      if [ -f .runner ]; then
+        echo 'Runner already configured, skipping registration';
+      else
+        ./config.sh --url https://github.com/n3otech --token ${RUNNER_TOKEN_001} --name twd0x5dlnxrun001 --labels self-hosted,linux,x64,runner,dotnet,docker --work _work --unattended --replace --disableupdate;
+      fi &&
+      exec ./run.sh"
+    networks:
+      - runner-network
+    security_opt:
+      - "apparmor=docker-default"
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - AUDIT_WRITE
+      - DAC_OVERRIDE
+      - SYS_ADMIN
+    tmpfs:
+      - /run
+      - /tmp:exec
+    environment:
+      RUNNER_NAME: twd0x5dlnxrun001
+      RUNNER_LABELS: self-hosted,linux,x64,runner,dotnet,docker
+      RUNNER_WORKDIR: /home/runner/_work
+      RUNNER_SCOPE: org
+      RUNNER_ORG: n3otech
+      RUNNER_TOKEN: ${RUNNER_TOKEN_001}
+      DOCKER_HOST: tcp://docker-001:2376
+      DOCKER_TLS_VERIFY: 1
+      DOCKER_CERT_PATH: /certs/client
+      ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT: 1
+      RUNNER_MANUALLY_TRAP_SIG: 1
+    volumes:
+      - ./config/run001:/home/runner/config:ro
+      - ./work/run001:/home/runner/_work
+      - run001-docker-certs:/certs:ro
+    depends_on:
+      docker-001:
+        condition: service_healthy
+    mem_limit: 15g
+    memswap_limit: 16g
+    cpus: 4
+    healthcheck:
+      # Check .runner file AND verify DinD TCP connectivity (catches broken DinD before jobs queue)
+      test: ["CMD-SHELL", "test -f /home/runner/.runner && awk 'NR>1 && $4==\"01\" {split($2,l,\":\"); split($3,r,\":\"); if (l[2]==\"01BB\" || r[2]==\"01BB\") f=1} END{exit !f}' /proc/net/tcp /proc/net/tcp6 && bash -c 'echo >/dev/tcp/docker-001/2376' 2>/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  docker-001:
+    image: docker:27.5.1-dind
+    container_name: docker-001
+    hostname: docker-001
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    networks:
+      - runner-network
+    runtime: runc
+    privileged: true
+    security_opt:
+      # CRITICAL: apparmor=unconfined is required for privileged DinD containers.
+      # Using docker-default with privileged=true causes AppArmor to block
+      # "mount -t tmpfs none /tmp" in dockerd-entrypoint.sh (Permission denied),
+      # resulting in a crash loop (exit 255) that persists until compose down/up.
+      - "apparmor=unconfined"
+      - "seccomp=unconfined"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_CHROOT
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+      DOCKER_TLS_VERIFY: 1
+      BUILDKIT_INLINE_CACHE: 1
+      # dns fallback: prevents inner containers losing external resolution when
+      # systemd-resolved (127.0.0.53) is slow or returns SERVFAIL.
+      DOCKER_DAEMON_ARGS: --userland-proxy=false --icc=false --dns 8.8.8.8 --dns 1.1.1.1
+    volumes:
+      - run001-docker-storage:/var/lib/docker
+      - run001-docker-certs:/certs
+      - run001-buildkit-cache:/var/lib/buildkit
+    mem_limit: 13g
+    memswap_limit: 14g
+    cpus: 3
+    healthcheck:
+      # Verify Docker API port is listening — catches crash loops before runners try to use DinD
+      test: ["CMD-SHELL", "nc -z localhost 2376 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ============================================================================
+  # Runner 2
+  # ============================================================================
+  runner-002:
+    image: ghcr.io/actions/actions-runner:2.335.1
+    container_name: runner-002
+    hostname: twd0x5dlnxrun002
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    command: >-
+      /bin/bash -c "cd /home/runner &&
+      cp -n /home/runner/config/.runner .runner 2>/dev/null || true &&
+      cp -n /home/runner/config/.credentials .credentials 2>/dev/null || true &&
+      cp -n /home/runner/config/.credentials_rsaparams .credentials_rsaparams 2>/dev/null || true &&
+      if [ -f .runner ]; then
+        echo 'Runner already configured, skipping registration';
+      else
+        ./config.sh --url https://github.com/n3otech --token ${RUNNER_TOKEN_002} --name twd0x5dlnxrun002 --labels self-hosted,linux,x64,runner,dotnet,docker --work _work --unattended --replace --disableupdate;
+      fi &&
+      exec ./run.sh"
+    networks:
+      - runner-network
+    security_opt:
+      - "apparmor=docker-default"
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - AUDIT_WRITE
+      - DAC_OVERRIDE
+      - SYS_ADMIN
+    tmpfs:
+      - /run
+      - /tmp:exec
+    environment:
+      RUNNER_NAME: twd0x5dlnxrun002
+      RUNNER_LABELS: self-hosted,linux,x64,runner,dotnet,docker
+      RUNNER_WORKDIR: /home/runner/_work
+      RUNNER_SCOPE: org
+      RUNNER_ORG: n3otech
+      RUNNER_TOKEN: ${RUNNER_TOKEN_002}
+      DOCKER_HOST: tcp://docker-002:2376
+      DOCKER_TLS_VERIFY: 1
+      DOCKER_CERT_PATH: /certs/client
+      ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT: 1
+      RUNNER_MANUALLY_TRAP_SIG: 1
+    volumes:
+      - ./config/run002:/home/runner/config:ro
+      - ./work/run002:/home/runner/_work
+      - run002-docker-certs:/certs:ro
+    depends_on:
+      docker-002:
+        condition: service_healthy
+    mem_limit: 15g
+    memswap_limit: 16g
+    cpus: 4
+    healthcheck:
+      # Check .runner file AND verify DinD TCP connectivity (catches broken DinD before jobs queue)
+      test: ["CMD-SHELL", "test -f /home/runner/.runner && awk 'NR>1 && $4==\"01\" {split($2,l,\":\"); split($3,r,\":\"); if (l[2]==\"01BB\" || r[2]==\"01BB\") f=1} END{exit !f}' /proc/net/tcp /proc/net/tcp6 && bash -c 'echo >/dev/tcp/docker-002/2376' 2>/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  docker-002:
+    image: docker:27.5.1-dind
+    container_name: docker-002
+    hostname: docker-002
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    networks:
+      - runner-network
+    runtime: runc
+    privileged: true
+    security_opt:
+      # CRITICAL: apparmor=unconfined is required for privileged DinD containers.
+      # Using docker-default with privileged=true causes AppArmor to block
+      # "mount -t tmpfs none /tmp" in dockerd-entrypoint.sh (Permission denied),
+      # resulting in a crash loop (exit 255) that persists until compose down/up.
+      - "apparmor=unconfined"
+      - "seccomp=unconfined"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_CHROOT
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+      DOCKER_TLS_VERIFY: 1
+      BUILDKIT_INLINE_CACHE: 1
+      # dns fallback: prevents inner containers losing external resolution when
+      # systemd-resolved (127.0.0.53) is slow or returns SERVFAIL.
+      DOCKER_DAEMON_ARGS: --userland-proxy=false --icc=false --dns 8.8.8.8 --dns 1.1.1.1
+    volumes:
+      - run002-docker-storage:/var/lib/docker
+      - run002-docker-certs:/certs
+      - run002-buildkit-cache:/var/lib/buildkit
+    mem_limit: 13g
+    memswap_limit: 14g
+    cpus: 3
+    healthcheck:
+      # Verify Docker API port is listening — catches crash loops before runners try to use DinD
+      test: ["CMD-SHELL", "nc -z localhost 2376 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
