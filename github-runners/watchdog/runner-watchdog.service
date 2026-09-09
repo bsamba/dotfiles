@@ -1,0 +1,9 @@
+[Unit]
+Description=GitHub Actions runner watchdog (restart unhealthy/offline runners)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/bsamba
+ExecStart=/usr/local/bin/runner-watchdog.sh __COMPOSE_DIR__

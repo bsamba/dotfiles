@@ -1,0 +1,3 @@
+# Runner registration tokens — never commit
+.env
+.env.*
