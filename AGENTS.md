@@ -37,6 +37,16 @@ A tuned Ollama fleet runs locally on this machine (see `~/source/repos/n3otech/d
 
 - Endpoint: `http://127.0.0.1:11435` (guarded proxy — preferred) or `http://127.0.0.1:11434` (direct).
 - The proxy and watchdog auto-start at logon via Task Scheduler (`\OllamaGuardProxy`, `\OllamaWatchdog`).
+- **Prefer local Ollama models for sub-agents.** When launching a custom agent (`task`) or delegating to background agents, point them at the local fleet via the OpenAI-compatible proxy endpoint `http://127.0.0.1:11435/v1` rather than a remote/cloud model, unless the task explicitly requires a remote model. This keeps work on the tuned local fleet, avoids network latency, and respects the temperature-0 determinism the fleet is configured for.
+
+### Job-side loop detection (fleet cost discipline)
+
+When running agentic jobs against the fleet (Copilot CLI sessions, batch scripts, custom harnesses), build the loop guard into the job itself — the proxy cannot see tool results, so it cannot detect semantic repetition:
+
+- **Instruct the agent.** Add to the job's prompt/instructions: *"If a tool call returns the same result as your previous attempt, do not repeat it — change approach or stop."* Re-running a tool that returns identical output wastes tokens, and on cloud-only models it wastes money.
+- **Cap iterations in the harness.** Abort a job after N consecutive identical tool results or a hard tool-call budget, and emit a summary of what was done instead of looping.
+- **Prefer local lanes.** Jobs that don't specifically need a cloud-only model should target local lane models (e.g. `qwen3.8-copilot`); direct cloud-model requests bypass all local lanes and bill paid tokens per request.
+- **The proxy sheds runaway cloud loops.** The cloud rate valve (`CLOUD_RATE_PER_MIN`, default 30 req/min per cloud model) returns `429 + Retry-After`; a job that trips it is looping, not working — fix the harness rather than raising the limit to "unblock" it.
 
 ## Environment gotchas (this machine)
 
@@ -48,7 +58,7 @@ A tuned Ollama fleet runs locally on this machine (see `~/source/repos/n3otech/d
 
 ## Skills to use
 
-Skills live under `~\.copilot\skills\<skill-name>\SKILL.md` or `~\.copilot\installed-plugins\<plugin>\skills\<skill-name>\SKILL.md` — read the skill file before applying it. Use the relevant skill whenever its description matches the task at hand, rather than solving it manually:
+Skills live under `~\.copilot\skills\<skill-name>\SKILL.md`, `~\.agents\skills\<skill-name>\SKILL.md`, or `~\.copilot\installed-plugins\<plugin>\skills\<skill-name>\SKILL.md` — read the skill file before applying it. Use the relevant skill whenever its description matches the task at hand, rather than solving it manually:
 
 - **repo-root-conventions** — where to clone/locate repos and place scratch files (see above).
 - **windows-powershell** — PowerShell 5.1/7 scripting, Windows system administration, scheduled tasks, Credential Manager, Pester testing, and Windows/Git Bash interop rules.
@@ -74,8 +84,43 @@ Skills live under `~\.copilot\skills\<skill-name>\SKILL.md` or `~\.copilot\insta
 - **agent-customization** — creating, updating, or debugging VS Code agent customization files (`.instructions.md`, `.prompt.md`, `.agent.md`, `SKILL.md`, `AGENTS.md`); use for saving coding preferences, fixing ignored instructions, or defining custom agent modes.
 - **chronicle** — querying Copilot session history for standup reports, usage tips, session search, and reindexing.
 - **get-search-view-results** — reading the current results from the VS Code Search view.
+- **typesafe-ai** — building with TypeSafe's System One API (the `jev` model): typed `noul`/`choice`/`score` judgments, state design, confidence handling, and the HTTP/SDK contracts. Located at `~\.agents\skills\typesafe-ai\SKILL.md`. Read the live docs at `https://docs.typesafe.ai/llms.txt` as part of the task — they are the source of truth. See "TypeSafe API access" below for the credential and endpoint.
 
 Check for newly available skills each session, as this list may not be exhaustive going forward.
+
+## Machine-scope credentials
+
+These secrets live in **machine-scope** environment variables (`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`), so every shell and every process on this machine inherits them — no per-shell loading step is needed. They were moved from user scope to machine scope on 2026-09-24.
+
+| Variable | Purpose |
+| --- | --- |
+| `TYPESAFE_API_KEY` | TypeSafe System One API key (see "TypeSafe API access" below) |
+| `DEEP_SEEK_API_KEY` | DeepSeek API key — auth for the Ollama guard proxy's DeepSeek cloud-overflow leg |
+| `KIMI_API_KEY` | Kimi (Moonshot) API key — auth for the proxy's Kimi cloud-overflow leg |
+| `CLOUD_TOKEN_THRESHOLD` | Fraction (e.g. `0.60`) that the guard proxy multiplies by `PROXY_LANE_CONTEXT_TOKENS` to decide when a request overflows to a cloud plane |
+
+The three proxy variables are consumed by `~/source/repos/n3otech/devops-core/local-ai-agents/ollama/proxy.js`; its header comment documents the overflow ladder (DeepSeek → Kimi → stay local) and the per-model token ceilings.
+
+Because these are machine-scope, they are readable by **every account** on this machine. Prefer user scope for any new secret that should not be machine-wide. Never commit these values, echo them into logs, or embed them in client-side bundles.
+
+## TypeSafe API access
+
+TypeSafe's System One API is available directly from this machine. The API key is in the machine-scope environment variable `TYPESAFE_API_KEY`, so it is already present in every shell — no loading step is required.
+
+- **Endpoint**: `POST https://api.typesafe.ai/v1/systemone`
+- **Auth**: `Authorization: Bearer $env:TYPESAFE_API_KEY` (the `Bearer` scheme is required; a raw key is rejected)
+- **Model**: `jev-latest` (resolves to the current `jev` release, e.g. `jev-1.13.0`)
+- **Body**: `{ "state": <string|object|array>, "model": "jev-latest", "questions": { "<id>": <Question> } }`
+- **Question types**: `noul` (yes/no probability), `choice` (one of a defined set + distribution), `score` (ordered levels + distribution). `choice`/`score` answers also carry `confidence`.
+- **Errors**: `401` bad key, `422` validation, `429` rate limit, `529` overloaded — back off exponentially on `429`/`529`.
+
+The key is already in the environment of every shell. If a shell somehow lacks it, read it explicitly from machine scope:
+
+```powershell
+$env:TYPESAFE_API_KEY = [Environment]::GetEnvironmentVariable('TYPESAFE_API_KEY','Machine')
+```
+
+Keep the key server-side in any application code; never commit it or embed it in client-side bundles. Prefer the official SDKs (`typesafe-sdk` for Python, `@typesafe-ai/sdk` for JavaScript) when writing application integrations — they read `TYPESAFE_API_KEY` from the environment and handle retries automatically.
 
 ## General agent behavior
 
