@@ -65,7 +65,9 @@ $alreadyInstalled = Test-Path "$fontDir\CaskaydiaCoveNerdFont-Regular.ttf"
 if (-not $alreadyInstalled) {
     $zip = "$env:TEMP\CascadiaCode.zip"
     $extractDir = "$env:TEMP\CascadiaCode"
-    Invoke-WebRequest "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/CascadiaCode.zip" -OutFile $zip -UseBasicParsing
+    # Use the "latest" redirect so the font stays current without a version bump.
+    # (Only downloaded when the font is not already installed - see the guard above.)
+    Invoke-WebRequest "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip" -OutFile $zip -UseBasicParsing
     Expand-Archive -Path $zip -DestinationPath $extractDir -Force
     New-Item -ItemType Directory -Force -Path $fontDir | Out-Null
     if (-not (Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
@@ -122,7 +124,11 @@ foreach ($path in $agentsPaths) {
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     if (Test-Path $path) {
         $existing = Get-Item $path
-        if ($existing.LinkType -eq 'HardLink' -and $existing.Target -contains $agentsTarget) {
+        # Hard links expose no .Target, so detect an existing link by content
+        # (a correct hard link shares the target's bytes) rather than by path.
+        # This makes re-runs a true no-op instead of always removing + recreating.
+        if ($existing.LinkType -eq 'HardLink' -and
+                (Get-FileHash $path).Hash -eq (Get-FileHash $agentsTarget).Hash) {
             Write-Host "  Already linked $path" -ForegroundColor Green
             continue
         }
