@@ -139,10 +139,36 @@ foreach ($path in $agentsPaths) {
 }
 
 # --- Environment variables ---
-Write-Host "`n[6/6] Checking environment variables..." -ForegroundColor Yellow
+Write-Host "`n[6/7] Checking environment variables..." -ForegroundColor Yellow
 Ensure-EnvironmentVariable -Name "AUTO_ADMIN_PASSWORD" -Description "local admin password"
 Ensure-EnvironmentVariable -Name "N3O_NUGET_TOKEN" -Description "N3O NuGet token"
 Ensure-EnvironmentVariable -Name "NUGET_AUTH_TOKEN" -Description "NuGet auth token"
+
+# --- Install Matt Pocock coding-agent skills (spec-driven workflow) ---
+Write-Host "`n[7/7] Installing Matt Pocock coding-agent skills..." -ForegroundColor Yellow
+$agentsSkillsDir = "$env:USERPROFILE\.agents\skills"
+$packMarker = Join-Path $agentsSkillsDir "to-spec"
+if (Test-Path $packMarker) {
+    Write-Host "  Matt Pocock skills already installed" -ForegroundColor Green
+} else {
+    Write-Host "  Installing Matt Pocock skills (npx skills@latest add mattpocock/skills)..." -ForegroundColor Cyan
+    npx skills@latest add mattpocock/skills
+    Write-Host "  Matt Pocock skills installed" -ForegroundColor Green
+}
+
+# Hard-link the spec-driven-dev persistent instruction so the implicit
+# workflow (grill-me -> to-spec -> to-tickets -> tdd) is active on every login.
+$instructionSource = Join-Path $dotfiles ".copilot\instructions\spec-driven-dev.instructions.md"
+$instructionTarget = Join-Path $env:USERPROFILE ".copilot\instructions\spec-driven-dev.instructions.md"
+New-Item -ItemType Directory -Force -Path (Split-Path $instructionTarget) | Out-Null
+if ((Test-Path $instructionTarget) -and
+        (Get-FileHash $instructionTarget).Hash -eq (Get-FileHash $instructionSource).Hash) {
+    Write-Host "  Spec-driven-dev instruction already linked" -ForegroundColor Green
+} else {
+    if (Test-Path $instructionTarget) { Remove-Item $instructionTarget -Force }
+    New-Item -ItemType HardLink -Path $instructionTarget -Target $instructionSource | Out-Null
+    Write-Host "  Linked spec-driven-dev instruction" -ForegroundColor Green
+}
 
 Write-Host "`n=== Done! Restart your terminal ===" -ForegroundColor Magenta
 Write-Host "  Don't forget: set font to 'CaskaydiaCove Nerd Font Mono' in Windows Terminal settings`n" -ForegroundColor DarkYellow
