@@ -11,6 +11,7 @@ General-purpose instructions for coding agents operating on this machine. This f
 - **Never commit directly to `dev`, `stg`, or `main`** (or equivalently named default/staging/production branches). Always create a feature branch and open a pull request instead.
 - For promotion PRs (`dev → stg → main`), prefer a real merge commit over squash where the repo allows it, so branch histories stay linked.
 - **When starting work in a repo, always use or create a GitHub issue for the task first.** Check for an existing issue that matches the task; if none exists, create one before starting implementation. Reference the issue number in commits and the PR description.
+- **Spec-driven development (mandatory — all repos).** Before writing code or taking any action to resolve an issue that changes code, follow the spec-driven workflow in `~\.copilot\instructions\spec-driven-dev.instructions.md` (grill-me → to-spec → to-tickets → tdd). This file is loaded automatically as a persistent instruction at session start, so it applies to every repo on this machine — treat it as mandatory and do not jump straight to implementation until the spec and tickets are agreed with the user. Read-only work (exploration, chat, answering a fact) is exempt.
 - Follow the repo-root conventions below when cloning repos or creating scratch files.
 
 ## Repository and scratch file locations
