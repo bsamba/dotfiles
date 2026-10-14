@@ -34,6 +34,11 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
     (& docker completion powershell) | Out-String | Invoke-Expression
 }
 
+# Ollama local providers: regenerate providers.json from the live Ollama proxy model list.
+# Script lives in the dotfiles repo; silent and non-blocking when the proxy is down.
+$ollamaRefresh = Join-Path $env:USERPROFILE 'dotfiles\.agents\providers\refresh-ollama-providers.ps1'
+if (Test-Path $ollamaRefresh) { & $ollamaRefresh }
+
 # dotnet CLI completions (requires: dotnet tool install -g dotnet-suggest)
 if (Get-Command dotnet-suggest -ErrorAction SilentlyContinue) {
     $availableToComplete = (dotnet-suggest list) | Out-String
