@@ -109,7 +109,7 @@ Because these are machine-scope, they are readable by **every account** on this 
 TypeSafe's System One API is available directly from this machine. The API key is in the machine-scope environment variable `TYPESAFE_API_KEY`, so it is already present in every shell — no loading step is required.
 
 - **Endpoint**: `POST https://api.typesafe.ai/v1/systemone`
-- **Auth**: `Authorization: Bearer $env:TYPESAFE_API_KEY` (the `Bearer` scheme is required; a raw key is rejected)
+- **Auth**: Set the HTTP authorization header to the `Bearer` scheme, a space, and the value of the `TYPESAFE_API_KEY` environment variable; a raw key is rejected.
 - **Model**: `jev-latest` (resolves to the current `jev` release, e.g. `jev-1.13.0`)
 - **Body**: `{ "state": <string|object|array>, "model": "jev-latest", "questions": { "<id>": <Question> } }`
 - **Question types**: `noul` (yes/no probability), `choice` (one of a defined set + distribution), `score` (ordered levels + distribution). `choice`/`score` answers also carry `confidence`.
