@@ -151,8 +151,8 @@ $packMarker = Join-Path $agentsSkillsDir "to-spec"
 if (Test-Path $packMarker) {
     Write-Host "  Matt Pocock skills already installed" -ForegroundColor Green
 } else {
-    Write-Host "  Installing Matt Pocock skills (npx skills@latest add mattpocock/skills)..." -ForegroundColor Cyan
-    npx skills@latest add mattpocock/skills
+    Write-Host "  Installing Matt Pocock skills (npx skills@latest add mattpocock/skills --global)..." -ForegroundColor Cyan
+    npx skills@latest add mattpocock/skills --global
     Write-Host "  Matt Pocock skills installed" -ForegroundColor Green
 }
 

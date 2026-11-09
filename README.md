@@ -39,7 +39,7 @@ Invoke-Expression (Invoke-WebRequest https://raw.githubusercontent.com/bsamba/do
 4. Symlinks `$PROFILE` → `dotfiles\powershell\Microsoft.PowerShell_profile.ps1`
 5. Hardlinks `AGENTS.md` → `~/AGENTS.md`, `~/.codex/AGENTS.md`, and `~/.claude/CLAUDE.md`
 6. Prompts for `AUTO_ADMIN_PASSWORD`, `N3O_NUGET_TOKEN`, and `NUGET_AUTH_TOKEN` if they are not set
-7. Installs Matt Pocock's coding-agent skills (`npx skills@latest add mattpocock/skills`) and hardlinks the spec-driven-dev instruction into `~/.copilot/instructions/`
+7. Installs Matt Pocock's coding-agent skills globally into `~/.agents/skills` (`npx skills@latest add mattpocock/skills --global`) and hardlinks the spec-driven-dev instruction into `~/.copilot/instructions/`
 
 > **Single source of truth:** `AGENTS.md` is the canonical file. `bootstrap.ps1` hardlinks it into `~/AGENTS.md`, `~/.codex/AGENTS.md`, and `~/.claude/CLAUDE.md`, so editing it here updates every agent at once. Re-run `.\check-links.ps1` after pulling to confirm the links are still intact.
 
@@ -59,8 +59,11 @@ taking action. It is wired in via the persistent instruction
 4. **tdd** — implement each ticket test-first (red → green → refactor)
 
 The skills are installed by `bootstrap.ps1` via
-`npx skills@latest add mattpocock/skills`. Read-only questions and pure chat
+`npx skills@latest add mattpocock/skills --global`. Read-only questions and pure chat
 skip the pre-flight.
+
+Repository workflow configuration: [issue tracker](docs/agents/issue-tracker.md),
+[triage labels](docs/agents/triage-labels.md), and [domain docs](docs/agents/domain.md).
 
 ## Updating
 
