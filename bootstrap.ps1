@@ -41,7 +41,7 @@ function Ensure-EnvironmentVariable {
 Write-Host "`n=== Dotfiles Bootstrap ===" -ForegroundColor Magenta
 
 # --- Install PowerShell profile dependencies ---
-Write-Host "`n[1/6] Installing PowerShell profile dependencies..." -ForegroundColor Yellow
+Write-Host "`n[1/8] Installing PowerShell profile dependencies..." -ForegroundColor Yellow
 
 Install-WingetPackage "JanDeDobbeleer.OhMyPosh" "oh-my-posh"
 
@@ -57,7 +57,7 @@ if (-not (Get-Module PSReadLine -ListAvailable | Where-Object Version -ge "2.3.0
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
 # --- Install Nerd Font ---
-Write-Host "`n[2/6] Installing CaskaydiaCove Nerd Font..." -ForegroundColor Yellow
+Write-Host "`n[2/8] Installing CaskaydiaCove Nerd Font..." -ForegroundColor Yellow
 $fontDir = "$env:LOCALAPPDATA\Microsoft\Windows\Fonts"
 $regPath = "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
 $alreadyInstalled = Test-Path "$fontDir\CaskaydiaCoveNerdFont-Regular.ttf"
@@ -82,14 +82,14 @@ if (-not $alreadyInstalled) {
 }
 
 # --- Copy oh-my-posh theme ---
-Write-Host "`n[3/6] Installing oh-my-posh theme..." -ForegroundColor Yellow
+Write-Host "`n[3/8] Installing oh-my-posh theme..." -ForegroundColor Yellow
 $themesDir = "$env:LOCALAPPDATA\Programs\oh-my-posh\themes"
 New-Item -ItemType Directory -Force -Path $themesDir | Out-Null
 Copy-Item "$dotfiles\oh-my-posh\themes\atomic.omp.json" "$themesDir\atomic.omp.json" -Force
 Write-Host "  Theme installed" -ForegroundColor Green
 
 # --- Symlink PowerShell profile ---
-Write-Host "`n[4/6] Linking PowerShell profile..." -ForegroundColor Yellow
+Write-Host "`n[4/8] Linking PowerShell profile..." -ForegroundColor Yellow
 $profileDir = Split-Path $PROFILE
 New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
 
@@ -112,7 +112,7 @@ if (-not (Test-Path $PROFILE)) {
 }
 
 # --- Link AGENTS.md for coding agents ---
-Write-Host "`n[5/6] Linking AGENTS.md for coding agents..." -ForegroundColor Yellow
+Write-Host "`n[5/8] Linking AGENTS.md for coding agents..." -ForegroundColor Yellow
 $agentsTarget = "$dotfiles\AGENTS.md"
 $agentsPaths = @(
     "$env:USERPROFILE\AGENTS.md",
@@ -139,13 +139,21 @@ foreach ($path in $agentsPaths) {
 }
 
 # --- Environment variables ---
-Write-Host "`n[6/7] Checking environment variables..." -ForegroundColor Yellow
+Write-Host "`n[6/8] Checking environment variables..." -ForegroundColor Yellow
 Ensure-EnvironmentVariable -Name "AUTO_ADMIN_PASSWORD" -Description "local admin password"
 Ensure-EnvironmentVariable -Name "N3O_NUGET_TOKEN" -Description "N3O NuGet token"
 Ensure-EnvironmentVariable -Name "NUGET_AUTH_TOKEN" -Description "NuGet auth token"
 
+# --- Install Node.js for the skills installer ---
+Write-Host "`n[7/8] Ensuring Node.js is installed for the skills installer..." -ForegroundColor Yellow
+Install-WingetPackage "OpenJS.NodeJS.LTS" "npx"
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+    throw "Node.js LTS was installed, but npx is not available in PATH."
+}
+
 # --- Install Matt Pocock coding-agent skills (spec-driven workflow) ---
-Write-Host "`n[7/7] Installing Matt Pocock coding-agent skills..." -ForegroundColor Yellow
+Write-Host "`n[8/8] Installing Matt Pocock coding-agent skills..." -ForegroundColor Yellow
 $agentsSkillsDir = "$env:USERPROFILE\.agents\skills"
 $packMarker = Join-Path $agentsSkillsDir "to-spec"
 if (Test-Path $packMarker) {
