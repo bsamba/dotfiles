@@ -6,7 +6,11 @@ if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
 
 # PSReadLine - predictive IntelliSense + syntax highlighting
 Import-Module PSReadLine
-Set-PSReadLineOption -PredictionSource HistoryAndPlugin
+if ($PSVersionTable.PSVersion -ge [version]'7.2') {
+    Set-PSReadLineOption -PredictionSource HistoryAndPlugin
+} else {
+    Set-PSReadLineOption -PredictionSource History
+}
 Set-PSReadLineOption -PredictionViewStyle ListView
 Set-PSReadLineOption -Colors @{
     Command            = '#61AFEF'  # blue
