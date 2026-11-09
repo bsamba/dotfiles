@@ -143,6 +143,7 @@ Write-Host "`n[6/7] Checking environment variables..." -ForegroundColor Yellow
 Ensure-EnvironmentVariable -Name "AUTO_ADMIN_PASSWORD" -Description "local admin password"
 Ensure-EnvironmentVariable -Name "N3O_NUGET_TOKEN" -Description "N3O NuGet token"
 Ensure-EnvironmentVariable -Name "NUGET_AUTH_TOKEN" -Description "NuGet auth token"
+Ensure-EnvironmentVariable -Name "TYPESAFE_API_KEY" -Description "TypeSafe API key"
 
 # --- Install Matt Pocock coding-agent skills (spec-driven workflow) ---
 Write-Host "`n[7/7] Installing Matt Pocock coding-agent skills..." -ForegroundColor Yellow
