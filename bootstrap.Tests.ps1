@@ -10,7 +10,10 @@ if ($helperStart -lt 0 -or $helperEnd -lt 0) {
     throw 'Could not extract Ensure-EnvironmentVariable from bootstrap.ps1'
 }
 $ensureEnvironmentVariable = [scriptblock]::Create(
-    $bootstrap.Substring($helperStart, $helperEnd + 2 - $helperStart)
+    # Replace only the OS boundary so tests never access real credentials.
+    $bootstrap.Substring($helperStart, $helperEnd + 2 - $helperStart).Replace(
+        '[System.Environment]::', '$script:environment.'
+    )
 )
 . $ensureEnvironmentVariable
 
@@ -20,6 +23,7 @@ function Read-Host {
         [switch]$MaskInput
     )
     $script:readHostCalls++
+    $script:readHostMasked = $MaskInput.IsPresent
     $script:readHostValue
 }
 
@@ -76,59 +80,27 @@ Describe 'Bootstrap skills installation' {
 
 Describe 'Bootstrap optional environment variables' {
     BeforeEach {
-        $userEnvironmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
-        $script:hadOriginalTypeSafeUserValue = $null -ne $userEnvironmentKey -and
-            $userEnvironmentKey.GetValueNames() -contains 'TYPESAFE_API_KEY'
-        if ($script:hadOriginalTypeSafeUserValue) {
-            $script:originalTypeSafeUserValue = $userEnvironmentKey.GetValue(
-                'TYPESAFE_API_KEY',
-                $null,
-                [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
-            )
-            $script:originalTypeSafeUserValueKind = $userEnvironmentKey.GetValueKind(
-                'TYPESAFE_API_KEY'
-            )
+        $script:environment = [pscustomobject]@{
+            Values = @{
+                Process = @{}
+                User = @{}
+                Machine = @{}
+            }
+            Writes = 0
         }
-        if ($null -ne $userEnvironmentKey) {
-            $userEnvironmentKey.Close()
+        $script:environment | Add-Member ScriptMethod GetEnvironmentVariable {
+            param($Name, $Scope)
+            $this.Values[[string]$Scope][$Name]
         }
-        $script:originalTypeSafeProcessValue = [System.Environment]::GetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            [System.EnvironmentVariableTarget]::Process
-        )
-        [System.Environment]::SetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            $null,
-            [System.EnvironmentVariableTarget]::User
-        )
+        $script:environment | Add-Member ScriptMethod SetEnvironmentVariable {
+            param($Name, $Value, $Scope)
+            $this.Writes++
+            $this.Values[[string]$Scope][$Name] = $Value
+        }
+        $script:variableName = 'DOTFILES_BOOTSTRAP_TEST_KEY'
         $script:readHostCalls = 0
         $script:readHostValue = $null
-    }
-
-    AfterEach {
-        if ($script:hadOriginalTypeSafeUserValue) {
-            $userEnvironmentKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
-            $userEnvironmentKey.SetValue(
-                'TYPESAFE_API_KEY',
-                $script:originalTypeSafeUserValue,
-                $script:originalTypeSafeUserValueKind
-            )
-            $userEnvironmentKey.Close()
-        } else {
-            $userEnvironmentKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(
-                'Environment',
-                $true
-            )
-            if ($null -ne $userEnvironmentKey) {
-                $userEnvironmentKey.DeleteValue('TYPESAFE_API_KEY', $false)
-                $userEnvironmentKey.Close()
-            }
-        }
-        [System.Environment]::SetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            $script:originalTypeSafeProcessValue,
-            [System.EnvironmentVariableTarget]::Process
-        )
+        $script:readHostMasked = $false
     }
 
     It 'registers TYPESAFE_API_KEY with the optional environment-variable helper' {
@@ -140,67 +112,97 @@ Describe 'Bootstrap optional environment variables' {
     It 'stores a supplied key in user and process scopes' {
         $script:readHostValue = 'test-api-key'
 
-        Ensure-EnvironmentVariable -Name 'TYPESAFE_API_KEY' -Description 'TypeSafe API key'
+        Ensure-EnvironmentVariable -Name $script:variableName -Description 'Test API key'
 
-        [System.Environment]::GetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            [System.EnvironmentVariableTarget]::User
-        ) | Should Be 'test-api-key'
-        [System.Environment]::GetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            [System.EnvironmentVariableTarget]::Process
-        ) | Should Be 'test-api-key'
+        $script:environment.Values.User[$script:variableName] | Should Be 'test-api-key'
+        $script:environment.Values.Process[$script:variableName] | Should Be 'test-api-key'
+        $script:environment.Values.Machine.Count | Should Be 0
+        $script:environment.Writes | Should Be 2
         $script:readHostCalls | Should Be 1
+        $script:readHostMasked | Should Be $true
     }
 
-    It 'does not persist skipped input and preserves the process-scope value' {
+    It 'does not persist skipped input' {
         $script:readHostValue = ''
 
-        Ensure-EnvironmentVariable -Name 'TYPESAFE_API_KEY' -Description 'TypeSafe API key'
+        Ensure-EnvironmentVariable -Name $script:variableName -Description 'Test API key'
 
-        $userValue = [System.Environment]::GetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            [System.EnvironmentVariableTarget]::User
-        )
-        $processValue = [System.Environment]::GetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            [System.EnvironmentVariableTarget]::Process
-        )
-        if (-not [string]::IsNullOrWhiteSpace($userValue)) {
-            throw 'Skipped input should not persist a user-scope value'
-        }
-        if (-not [System.String]::Equals(
-            $processValue,
-            $script:originalTypeSafeProcessValue,
-            [System.StringComparison]::Ordinal
-        )) {
-            throw 'Skipped input should leave the process-scope value unchanged'
-        }
+        $script:environment.Writes | Should Be 0
         $script:readHostCalls | Should Be 1
     }
 
     It 'preserves an existing user value without prompting' {
-        [System.Environment]::SetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            'existing-test-key',
-            [System.EnvironmentVariableTarget]::User
-        )
-        [System.Environment]::SetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            'process-test-key',
-            [System.EnvironmentVariableTarget]::Process
-        )
+        $script:environment.Values.User[$script:variableName] = 'existing-test-key'
 
-        Ensure-EnvironmentVariable -Name 'TYPESAFE_API_KEY' -Description 'TypeSafe API key'
+        Ensure-EnvironmentVariable -Name $script:variableName -Description 'Test API key'
 
-        [System.Environment]::GetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            [System.EnvironmentVariableTarget]::User
-        ) | Should Be 'existing-test-key'
-        [System.Environment]::GetEnvironmentVariable(
-            'TYPESAFE_API_KEY',
-            [System.EnvironmentVariableTarget]::Process
-        ) | Should Be 'process-test-key'
+        $script:environment.Values.User[$script:variableName] | Should Be 'existing-test-key'
+        $script:environment.Values.Process.Count | Should Be 0
+        $script:environment.Writes | Should Be 0
         $script:readHostCalls | Should Be 0
+    }
+
+    It 'recognizes a machine-only value without prompting or copying it' {
+        $script:environment.Values.Machine[$script:variableName] = 'machine-test-key'
+
+        Ensure-EnvironmentVariable -Name $script:variableName -Description 'Test API key'
+
+        $script:readHostCalls | Should Be 0
+        $script:environment.Writes | Should Be 0
+        $script:environment.Values.Machine[$script:variableName] | Should Be 'machine-test-key'
+        $script:environment.Values.User.Count | Should Be 0
+        $script:environment.Values.Process.Count | Should Be 0
+    }
+
+    It 'recognizes a process-only value without prompting or persisting it' {
+        $script:environment.Values.Process[$script:variableName] = 'process-test-key'
+
+        Ensure-EnvironmentVariable -Name $script:variableName -Description 'Test API key'
+
+        $script:readHostCalls | Should Be 0
+        $script:environment.Writes | Should Be 0
+        $script:environment.Values.Process[$script:variableName] | Should Be 'process-test-key'
+        $script:environment.Values.User.Count | Should Be 0
+        $script:environment.Values.Machine.Count | Should Be 0
+    }
+
+    It 'preserves conflicting values across all scopes' {
+        $script:environment.Values.Process[$script:variableName] = 'process-test-key'
+        $script:environment.Values.User[$script:variableName] = 'user-test-key'
+        $script:environment.Values.Machine[$script:variableName] = 'machine-test-key'
+
+        Ensure-EnvironmentVariable -Name $script:variableName -Description 'Test API key'
+
+        $script:readHostCalls | Should Be 0
+        $script:environment.Writes | Should Be 0
+        $script:environment.Values.Process[$script:variableName] | Should Be 'process-test-key'
+        $script:environment.Values.User[$script:variableName] | Should Be 'user-test-key'
+        $script:environment.Values.Machine[$script:variableName] | Should Be 'machine-test-key'
+    }
+
+    It 'continues past blank scopes to recognize an existing machine value' {
+        $script:environment.Values.Process[$script:variableName] = ' '
+        $script:environment.Values.User[$script:variableName] = ''
+        $script:environment.Values.Machine[$script:variableName] = 'machine-test-key'
+
+        Ensure-EnvironmentVariable -Name $script:variableName -Description 'Test API key'
+
+        $script:readHostCalls | Should Be 0
+        $script:environment.Writes | Should Be 0
+        $script:environment.Values.Process[$script:variableName] | Should Be ' '
+        $script:environment.Values.User[$script:variableName] | Should Be ''
+    }
+
+    It 'prompts when all existing scopes are blank and ignores whitespace input' {
+        $script:environment.Values.Process[$script:variableName] = ' '
+        $script:environment.Values.User[$script:variableName] = ''
+        $script:environment.Values.Machine[$script:variableName] = "`t"
+        $script:readHostValue = ' '
+
+        Ensure-EnvironmentVariable -Name $script:variableName -Description 'Test API key'
+
+        $script:readHostCalls | Should Be 1
+        $script:readHostMasked | Should Be $true
+        $script:environment.Writes | Should Be 0
     }
 }

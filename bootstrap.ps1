@@ -23,7 +23,13 @@ function Ensure-EnvironmentVariable {
         [string]$Name,
         [string]$Description = $Name
     )
-    $existing = [System.Environment]::GetEnvironmentVariable($Name, "User")
+    $existing = $null
+    foreach ($scope in "Process", "User", "Machine") {
+        $existing = [System.Environment]::GetEnvironmentVariable($Name, $scope)
+        if (-not [string]::IsNullOrWhiteSpace($existing)) {
+            break
+        }
+    }
     if ([string]::IsNullOrWhiteSpace($existing)) {
         $value = Read-Host "  Enter $Description (or press Enter to skip)" -MaskInput
         if (-not [string]::IsNullOrWhiteSpace($value)) {
