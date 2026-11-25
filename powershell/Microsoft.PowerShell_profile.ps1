@@ -6,21 +6,22 @@ if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
 
 # PSReadLine - predictive IntelliSense + syntax highlighting
 Import-Module PSReadLine
-if ($PSVersionTable.PSVersion -ge [version]'7.2') {
-    Set-PSReadLineOption -PredictionSource HistoryAndPlugin
-} else {
+try {
     Set-PSReadLineOption -PredictionSource History
-}
-Set-PSReadLineOption -PredictionViewStyle ListView
-Set-PSReadLineOption -Colors @{
-    Command            = '#61AFEF'  # blue
-    Parameter          = '#C678DD'  # purple
-    String             = '#98C379'  # green
-    Operator           = '#56B6C2'  # cyan
-    Variable           = '#E06C75'  # red
-    Comment            = '#5C6370'  # grey
-    InlinePrediction   = '#5C6370'  # grey (ghost text)
-    Selection          = '#3E4452'  # dark highlight
+    Set-PSReadLineOption -PredictionViewStyle ListView
+    Set-PSReadLineOption -Colors @{
+        Command            = '#61AFEF'  # blue
+        Parameter          = '#C678DD'  # purple
+        String             = '#98C379'  # green
+        Operator           = '#56B6C2'  # cyan
+        Variable           = '#E06C75'  # red
+        Comment            = '#5C6370'  # grey
+        InlinePrediction   = '#5C6370'  # grey (ghost text)
+        Selection          = '#3E4452'  # dark highlight
+    }
+} catch {
+    # Prediction UI is optional and may be unavailable in redirected or
+    # non-terminal hosts. Do not prevent shell startup.
 }
 
 # GitHub CLI completions
