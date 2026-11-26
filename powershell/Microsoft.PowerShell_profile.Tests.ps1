@@ -17,7 +17,7 @@ Describe 'PSReadLine prediction source' {
         Get-RequestedPredictionSource 'powershell.exe' | Should Be 'History'
     }
 
-    It 'uses HistoryAndPlugin on PowerShell 7.2+' -Skip:(-not (Get-Command pwsh -ErrorAction SilentlyContinue)) {
-        Get-RequestedPredictionSource 'pwsh.exe' | Should Be 'HistoryAndPlugin'
+    It 'uses History on PowerShell 7.2+' -Skip:(-not (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+        Get-RequestedPredictionSource 'pwsh.exe' | Should Be 'History'
     }
 }
